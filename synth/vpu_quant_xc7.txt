@@ -1,0 +1,31 @@
+
+6. Printing statistics.
+
+=== vpu_quant ===
+
+        +----------Local Count, excluding submodules.
+        | 
+     1144 wires
+     2783 wire bits
+       48 public wires
+      623 public wire bits
+       11 ports
+      144 port bits
+     1094 cells
+        2   $scopeinfo
+        1   BUFG
+       64   CARRY4
+      372   FDRE
+        7   FDSE
+       69   IBUF
+       67   INV
+      127   LUT2
+       75   LUT3
+       20   LUT4
+       92   LUT5
+      115   LUT6
+       75   OBUF
+        2   RAM32M
+        5   RAMB18E1
+        1   SRL16E
+

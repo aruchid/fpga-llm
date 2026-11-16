@@ -1,0 +1,35 @@
+
+6. Printing statistics.
+
+=== attn_head ===
+
+        +----------Local Count, excluding submodules.
+        | 
+    11253 wires
+    33273 wire bits
+      242 public wires
+     8440 public wire bits
+       12 ports
+      617 port bits
+    16521 cells
+        6   $scopeinfo
+        1   BUFG
+      420   CARRY4
+       41   DSP48E1
+     6513   FDRE
+        3   FDSE
+      550   IBUF
+       99   INV
+      738   LUT2
+     2130   LUT3
+     1799   LUT4
+     2683   LUT5
+     1388   LUT6
+       24   MUXF7
+       11   MUXF8
+       67   OBUF
+       11   RAM32M
+        2   RAMB18E1
+        4   RAMB36E1
+       31   SRL16E
+

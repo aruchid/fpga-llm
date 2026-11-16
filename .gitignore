@@ -1,0 +1,13 @@
+.venv/
+models/*.bin
+__pycache__/
+.pytest_cache/
+sim_build/
+results.xml
+*.result.xml
+*.fst
+*.vcd
+# yosys 中间产物（体积大，可由命令重新生成）；保留 *_xc7.txt 统计
+synth/*.json
+synth/log_*.txt
+.DS_Store
