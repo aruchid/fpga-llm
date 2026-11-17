@@ -1,0 +1,13 @@
+# 模型权重：体积巨大，不入库（用 fetch_model.py 重新下载）
+models/
+
+# 中间张量（latent / 噪声）
+out/*.npy
+
+# 可由 build_report.py 重新生成的网页版（PDF 保留）
+out/*.html
+
+# Python 缓存
+__pycache__/
+*.pyc
+.venv/
