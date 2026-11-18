@@ -40,8 +40,19 @@ class MVM32Tiled:
         self.fmax_mhz = fmax_mhz
         self.stats = TileStats()
 
-    def gemm_int8(self, W: torch.Tensor, X: torch.Tensor) -> torch.Tensor:
-        """W (M,K) int8 × X (K,B) int8 → int32 (M,B)，严格按 32×32 tile 累加。"""
+    def gemm_int8(self, W: torch.Tensor, X: torch.Tensor, max_cols: int = 1024) -> torch.Tensor:
+        """W (M,K) int8 × X (K,B) int8 → int32 (M,B)，严格按 32×32 tile 累加。
+
+        按列分块（max_cols）以限制 float64 中间缓冲：512² 的 VAE 层一次算需要 4.5 GB，
+        分块后每块只有几十 MB。分块只切 B 方向，不改变每个输出元素的累加顺序。
+        """
+        B = X.shape[1]
+        if B > max_cols:
+            return torch.cat([self.gemm_int8(W, X[:, c:c + max_cols], max_cols)
+                              for c in range(0, B, max_cols)], dim=1)
+        return self._gemm_tiles(W, X)
+
+    def _gemm_tiles(self, W: torch.Tensor, X: torch.Tensor) -> torch.Tensor:
         M, K = W.shape
         B = X.shape[1]
         nb = self.blk

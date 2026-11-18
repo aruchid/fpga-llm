@@ -101,7 +101,7 @@ python fpga/quant_unet.py
 | 周期数 | **81.65 G** |
 | 等效硬件耗时 | **710 s @115 MHz / 32 路** |
 | 与 FP32 的 PSNR | **22.00 dB** |
-| 软件耗时 | 117 s（瓶颈是 Python 逐层 im2col） |
+| 软件耗时 | 85 s（瓶颈是 Python 逐层 im2col） |
 
 已验证 `MVM32Tiled.gemm_int8` 在多种真实形状上与 `torch._int_mm`（IMMA）**逐比特一致**，
 所以整条链的结果与「int8 硬件真算」相同。
