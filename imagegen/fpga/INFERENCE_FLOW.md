@@ -156,11 +156,11 @@ Y(M×B) = W(M×K) · X(K×B)      W、X 为 int8，累加 int32
 
 ---
 
-## 8. 重构计划（下一步）
+## 8. 重构（已完成）
 
 把这套流程里的每一次矩阵乘，从 `torch._int_mm` 换成**按 32×32 tile 显式调度的引擎**：
 
-1. `mvm_tile.py`：实现 tile 级 GEMM —— 按 `ceil(M/32)×ceil(K/32)` 切块，逐 tile 做
+1. `mvm_tiled.py`：实现 tile 级 GEMM —— 按 `ceil(M/32)×ceil(K/32)` 切块，逐 tile 做
    32×32 的 int32 累加，权重按行流式读取，统计 tile 数与周期。
 2. 把 `q8.mm8` 替换成 tile 引擎（接口相同），其余（量化、反量化、norm、softmax）不动。
 3. 验证：输出图像与当前 INT8 结果**逐比特相同**（因为累加顺序不影响整数结果），
@@ -169,3 +169,6 @@ Y(M×B) = W(M×K) · X(K×B)      W、X 为 int8，累加 int32
 
 > 之所以能保证「换引擎不改结果」：int8 乘积是整数，int32 累加满足结合律，
 > 32×32 的分块累加与整块累加结果完全相同（已在 `test_mvm32.py` 里验证过）。
+
+完成情况：`mvm_tiled.py` 已实现并接入 `quant_unet.py --tile`，UNet 与 VAE 全部矩阵乘走该引擎，
+输出与 `torch._int_mm` 版本逐像素相同。替换量与性能见 `REPORT_32MATRIX.md`。

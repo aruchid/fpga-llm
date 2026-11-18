@@ -13,45 +13,18 @@ import time
 from pathlib import Path
 
 import numpy as np
-MAC_COUNT = [0]
-MAC_BY = {"conv": 0, "linear": 0}
-TILE = [None]        # 设置后，矩阵乘改走 32×32 tile 引擎
 import torch
 import torch.nn.functional as F
 from PIL import Image
 
+from q8 import mm8, quant_rows as q_rows, quant_weight as q_weight
+
+MAC_COUNT = [0]
+MAC_BY = {"conv": 0, "linear": 0}
+TILE = [None]        # 设置后，矩阵乘改走 32×32 tile 引擎
+
 MODEL = r"E:\FPGALLM\imagegen\models\sd-turbo-diffusers"
 PROMPT = "a cozy cabin in a snowy pine forest at dusk, warm light in the windows, photorealistic"
-
-
-def q_weight(w: torch.Tensor):
-    """(O, K) float → int8 + per-channel scale，返回 (int8, scale)"""
-    amax = w.abs().amax(dim=1, keepdim=True).clamp(min=1e-8)
-    s = amax / 127.0
-    q = torch.clamp(torch.round(w / s), -127, 127).to(torch.int8)
-    return q, s[:, 0]
-
-
-def q_rows(x: torch.Tensor):
-    amax = x.abs().amax(dim=1, keepdim=True).clamp(min=1e-8)
-    s = amax / 127.0
-    q = torch.clamp(torch.round(x / s), -127, 127).to(torch.int8)
-    return q, s[:, 0]
-
-
-def mm8(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    k, n = a.shape[1], b.shape[1]
-    k8, n8 = (k + 7) // 8 * 8, (n + 7) // 8 * 8
-    if k8 != k:
-        a = F.pad(a, (0, k8 - k))
-        b = F.pad(b, (0, 0, 0, k8 - k))
-    if n8 != n:
-        b = F.pad(b, (0, n8 - n))
-    try:
-        out = torch._int_mm(a.contiguous(), b.contiguous())
-    except RuntimeError:
-        out = torch.round(a.double() @ b.double()).to(torch.int32)
-    return out[:, :n]
 
 
 class QConv2d(torch.nn.Module):
