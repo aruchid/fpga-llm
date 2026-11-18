@@ -12,7 +12,7 @@
 | 与 FP32 参考的 PSNR | **22.01 dB** |
 | 平均绝对像素差 | 0.0427 |
 | UNet 算力（4 步） | **1356 GMAC**（339 GMAC/步） |
-| 软件耗时（RTX 5060） | FP32 0.97 s / INT8 20.5 s（Python 逐层 im2col，未优化） |
+| 软件耗时（RTX 5060） | FP32 0.94 s / INT8 2.1 s / INT8+32×32 tile 3.0 s |
 | 32 路引擎等效耗时 | 1356 GMAC ÷ 3.68 GMAC/s ≈ **369 s** @115 MHz |
 
 图像对比见 `out/diffusers_fp_vs_int8.png`（左 FP32、右 INT8）。

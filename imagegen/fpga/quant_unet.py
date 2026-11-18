@@ -22,6 +22,7 @@ from q8 import mm8, quant_rows as q_rows, quant_weight as q_weight
 MAC_COUNT = [0]
 MAC_BY = {"conv": 0, "linear": 0}
 TILE = [None]        # 设置后，矩阵乘改走 32×32 tile 引擎
+PROFILE = {"on": False, "pad": 0.0, "im2col": 0.0, "quant": 0.0, "gemm": 0.0, "dequant": 0.0}
 
 MODEL = r"E:\FPGALLM\imagegen\models\sd-turbo-diffusers"
 PROMPT = "a cozy cabin in a snowy pine forest at dusk, warm light in the windows, photorealistic"
@@ -42,34 +43,71 @@ class QConv2d(torch.nn.Module):
         self.groups = conv.groups
         assert self.groups == 1, "只支持 groups=1"
 
-    def forward(self, x):
+    def forward(self, x, chunk: int = 8192):
+        """按输出像素分块：512² 的 im2col 一次要 1.2 GB，分块后每块仅几十 MB。"""
         x = x.float()
         n, c, h, w = x.shape
         out = []
         for b in range(n):
+            t0 = time.perf_counter()
             xh = x[b].permute(1, 2, 0).contiguous()          # NCHW → NHWC
-            xp = F.pad(xh, (0, 0, self.pad[0], self.pad[0], self.pad[1], self.pad[1])) if self.pad[0] else xh
+            if self.pad[0] or self.pad[1]:
+                ph, pw = self.pad[0], self.pad[1]
+                xp = torch.zeros((h + 2 * ph, w + 2 * pw, c), dtype=xh.dtype, device=xh.device)
+                xp[ph:ph + h, pw:pw + w, :] = xh             # 连续拷贝，比 F.pad 快很多
+            else:
+                xp = xh
             ho = (h + 2 * self.pad[0] - self.kh) // self.stride[0] + 1
             wo = (w + 2 * self.pad[1] - self.kw) // self.stride[1] + 1
-            rr = (torch.arange(ho, device=x.device) * self.stride[0])[:, None]
-            cc = (torch.arange(wo, device=x.device) * self.stride[1])[None, :]
-            cols = torch.empty((ho * wo, self.kh * self.kw * c), dtype=torch.float32, device=x.device)
-            t = 0
-            for i in range(self.kh):
-                for j in range(self.kw):
-                    cols[:, t * c:(t + 1) * c] = xp[rr + i, cc + j, :].reshape(ho * wo, c)
-                    t += 1
-            aq, as_ = q_rows(cols)
-            MAC_COUNT[0] += self.q.shape[0] * self.q.shape[1] * (ho * wo)
-            MAC_BY["conv"] += self.q.shape[0] * self.q.shape[1] * (ho * wo)
-            acc = (TILE[0].gemm_int8(self.q, aq.T) if TILE[0] is not None
-                   else mm8(self.q, aq.T))                       # (O, ho*wo) int32
-            y = acc.float() * (self.s[:, None] * as_[None, :])
-            if self.b is not None:
-                y = y + self.b[:, None]
-            out.append(y.T.reshape(ho, wo, -1).permute(2, 0, 1))
-        return torch.stack(out, dim=0).to(x.dtype)
+            B = ho * wo
+            if PROFILE["on"]:
+                torch.cuda.synchronize()
+                PROFILE["pad"] += time.perf_counter() - t0
 
+            y_out = torch.empty((B, self.q.shape[0]), dtype=torch.float32, device=x.device)
+            for s0 in range(0, B, chunk):
+                s1 = min(s0 + chunk, B)
+                idx = torch.arange(s0, s1, device=x.device)
+                rr = (idx // wo) * self.stride[0]
+                cc = (idx % wo) * self.stride[1]
+
+                t0 = time.perf_counter()
+                cols = torch.empty((s1 - s0, self.kh * self.kw * c), dtype=torch.float32, device=x.device)
+                t = 0
+                for i in range(self.kh):
+                    for j in range(self.kw):
+                        cols[:, t * c:(t + 1) * c] = xp[rr + i, cc + j, :]
+                        t += 1
+                if PROFILE["on"]:
+                    torch.cuda.synchronize()
+                    PROFILE["im2col"] += time.perf_counter() - t0
+
+                t0 = time.perf_counter()
+                aq, as_ = q_rows(cols)
+                if PROFILE["on"]:
+                    torch.cuda.synchronize()
+                    PROFILE["quant"] += time.perf_counter() - t0
+
+                MAC_COUNT[0] += self.q.shape[0] * self.q.shape[1] * (s1 - s0)
+                MAC_BY["conv"] += self.q.shape[0] * self.q.shape[1] * (s1 - s0)
+
+                t0 = time.perf_counter()
+                acc = (TILE[0].gemm_int8(self.q, aq.T) if TILE[0] is not None
+                       else mm8(self.q, aq.T))                   # (O, chunk) int32
+                if PROFILE["on"]:
+                    torch.cuda.synchronize()
+                    PROFILE["gemm"] += time.perf_counter() - t0
+
+                t0 = time.perf_counter()
+                y = acc.float() * (self.s[:, None] * as_[None, :])
+                if self.b is not None:
+                    y = y + self.b[:, None]
+                y_out[s0:s1] = y.T
+                if PROFILE["on"]:
+                    torch.cuda.synchronize()
+                    PROFILE["dequant"] += time.perf_counter() - t0
+            out.append(y_out.reshape(ho, wo, -1).permute(2, 0, 1))
+        return torch.stack(out, dim=0).to(x.dtype)
 
 class QLinear(torch.nn.Linear):
     """INT8 线性层（原地替换，保留原 module 的接口）。"""
@@ -118,13 +156,14 @@ def main() -> int:
     ap.add_argument("--out", default="out")
     ap.add_argument("--tile", action="store_true", help="矩阵乘改走 32x32 tile 引擎")
     ap.add_argument("--vae8", action="store_true", help="VAE 解码器也量化进 32x32 矩阵")
+    ap.add_argument("--strict-tiles", action="store_true", help="逐 32 元素 K 块累加（慢，但显式复现 RTL 块累加）")
     args = ap.parse_args()
 
     from diffusers import AutoPipelineForText2Image
 
     if args.tile:
         import mvm_tiled
-        TILE[0] = mvm_tiled.MVM32Tiled()
+        TILE[0] = mvm_tiled.MVM32Tiled(strict=args.strict_tiles)
         print("[tile] 启用严格 32×32 tile 引擎", flush=True)
 
     out = Path(args.out).resolve()
@@ -142,6 +181,7 @@ def main() -> int:
     t0 = time.perf_counter()
     fp_img = gen()
     fp_dt = time.perf_counter() - t0
+    torch.cuda.empty_cache()        # fp32 的权重/激活会留在缓存分配器里，挤占量化后的显存
     fp_path = out / f"diffusers_fp32_seed{args.seed}.png"
     fp_img.save(fp_path)
     print(f"[fp32] {fp_dt:.2f}s -> {fp_path}", flush=True)
@@ -151,6 +191,7 @@ def main() -> int:
     if args.vae8:
         # VAE 解码器同样量化：整条链（UNet + VAE）都走 32×32 矩阵
         quantize_unet(pipe.vae.decoder)
+    torch.cuda.empty_cache()
     print(f"[quant] {time.perf_counter()-t0:.1f}s", flush=True)
 
     t0 = time.perf_counter()

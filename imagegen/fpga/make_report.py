@@ -16,7 +16,7 @@ ITEMS = [
     ("diffusers_fp_seed42.png", "B. FP16 baseline", "diffusers fp16"),
     ("seed42_s4_512px.png", "C. ComfyUI FP", "ComfyUI KSampler, 4 steps"),
     ("diffusers_int8_seed42.png", "D. INT8 weights+acts", "UNet int8, VAE fp, 20.5s"),
-    ("diffusers_int8_tile_seed42.png", "E. INT8 + 32x32 tile", "UNet+VAE int8 tile, 85s"),
+    ("diffusers_int8_tile_seed42.png", "E. INT8 + 32x32 tile", "UNet+VAE int8 tile, 3s"),
     ("img_fx_fx_eps4_seed42.png", "F. broken (eps mistake)", "wrong sampler -> flat"),
 ]
 
