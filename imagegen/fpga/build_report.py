@@ -12,9 +12,14 @@ from pathlib import Path
 import markdown
 
 ROOT = Path(r"E:\FPGALLM\imagegen")
-MD = ROOT / "fpga" / "REPORT_32MATRIX.md"
-HTML = ROOT / "out" / "report_32matrix.html"
-PDF = ROOT / "out" / "report_32matrix.pdf"
+import argparse
+_ap = argparse.ArgumentParser()
+_ap.add_argument("--md", default="REPORT_32MATRIX.md")
+_ap.add_argument("--name", default="report_32matrix")
+_args = _ap.parse_args()
+MD = ROOT / "fpga" / _args.md
+HTML = ROOT / "out" / f"{_args.name}.html"
+PDF = ROOT / "out" / f"{_args.name}.pdf"
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
 CSS = """

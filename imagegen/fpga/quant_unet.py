@@ -53,8 +53,15 @@ class QConv2d(torch.nn.Module):
             xh = x[b].permute(1, 2, 0).contiguous()          # NCHW → NHWC
             if self.pad[0] or self.pad[1]:
                 ph, pw = self.pad[0], self.pad[1]
-                xp = torch.zeros((h + 2 * ph, w + 2 * pw, c), dtype=xh.dtype, device=xh.device)
-                xp[ph:ph + h, pw:pw + w, :] = xh             # 连续拷贝，比 F.pad 快很多
+                # 只把边框清零，避免 zeros 对整个缓冲区做 memset（512² 每层 135 MB）
+                xp = torch.empty((h + 2 * ph, w + 2 * pw, c), dtype=xh.dtype, device=xh.device)
+                xp[ph:ph + h, pw:pw + w, :] = xh
+                if ph:
+                    xp[:ph, :, :] = 0
+                    xp[ph + h:, :, :] = 0
+                if pw:
+                    xp[:, :pw, :] = 0
+                    xp[:, pw + w:, :] = 0
             else:
                 xp = xh
             ho = (h + 2 * self.pad[0] - self.kh) // self.stride[0] + 1
